@@ -149,12 +149,17 @@ namespace Plugin {
         }
 
         if (_linchpin != nullptr) {
-            _linchpin->Register(&_notification);
+            if (_linchpin->Register(&_notification) == Core::ERROR_NONE) {
+                LOGINFO("Registered for Linchpin notifications");
+            }
 
             if (_linchpin->Subscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
+                LOGINFO("Subscribe to topic %s succeeded", _topic.c_str());
+
                 // Delivers a message already pending on the topic, if any.
-                _linchpin->RegistrationCallbackOnMessageReceived(LINCHPIN_CLIENT_ID);
-                LOGINFO("Subscribed to topic %s", _topic.c_str());
+                if (_linchpin->RegistrationCallbackOnMessageReceived(LINCHPIN_CLIENT_ID) == Core::ERROR_NONE) {
+                    LOGINFO("RegistrationCallbackOnMessageReceived succeeded for %s", LINCHPIN_CLIENT_ID);
+                }
             } else {
                 LOGERR("Failed to subscribe to topic %s", _topic.c_str());
                 _linchpin->Unregister(&_notification);
@@ -173,8 +178,12 @@ namespace Plugin {
         _adminLock.Lock();
 
         if (_linchpin != nullptr) {
-            _linchpin->Unsubscribe(LINCHPIN_CLIENT_ID, _topic);
-            _linchpin->Unregister(&_notification);
+            if (_linchpin->Unsubscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
+                LOGINFO("Unsubscribe from topic %s succeeded", _topic.c_str());
+            }
+            if (_linchpin->Unregister(&_notification) == Core::ERROR_NONE) {
+                LOGINFO("Unregistered from Linchpin notifications");
+            }
             _linchpin->Release();
             _linchpin = nullptr;
         }
@@ -184,11 +193,11 @@ namespace Plugin {
 
     void WebRemote::HandleMessage(const string& topic, const string& payloadType, const string& payload)
     {
+        LOGINFO("Message on topic %s (subscribed %s), payloadType %s", topic.c_str(), _topic.c_str(), payloadType.c_str());
+
         if (topic != _topic) {
             return;
         }
-
-        LOGINFO("Message on topic %s, payloadType %s", topic.c_str(), payloadType.c_str());
 
         Core::JSON::VariantContainer message;
         if (message.FromString(payload) == false) {
@@ -250,6 +259,8 @@ namespace Plugin {
 
         if (success == false) {
             LOGERR("Failed to generate key %d", code);
+        } else {
+            LOGINFO("GenerateKeys succeeded: code %d, modifier %u, delay %u, duration %u", code, modifier, delay, duration);
         }
         return success;
     }
@@ -257,11 +268,11 @@ namespace Plugin {
     bool WebRemote::SendText(const string& text)
     {
         bool success = false;
+        Core::OptionalType<string> sessionId;
         Exchange::IVoiceControl* voice = _service->QueryInterfaceByCallsign<Exchange::IVoiceControl>(VOICECONTROL_CALLSIGN);
 
         if (voice != nullptr) {
             bool accepted = false;
-            Core::OptionalType<string> sessionId;
 
             const Core::hresult result = voice->VoiceSessionRequest(Exchange::VoiceSessionRequestType::MIC_TRANSCRIPTION,
                 Core::OptionalType<string>(text), Core::OptionalType<string>(), Core::OptionalType<string>(),
@@ -273,6 +284,8 @@ namespace Plugin {
 
         if (success == false) {
             LOGERR("Failed to send voice text");
+        } else {
+            LOGINFO("VoiceSessionRequest succeeded: sessionId %s", sessionId.IsSet() ? sessionId.Value().c_str() : "<not set>");
         }
         return success;
     }
