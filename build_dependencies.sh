@@ -50,7 +50,7 @@ git clone --branch R4_4-RDK https://github.com/rdkcentral/Thunder.git
 git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
 
 # ILinchpinClientProxy is published by the private cpc-apis repository.
-git clone --branch develop "https://x-access-token:${RDKE_GITHUB_TOKEN}@github.com/rdk-e/entservices-cpc-apis.git"
+git clone --branch develop "https://x-access-token:${GITHUB_TOKEN}@github.com/rdk-e/entservices-cpc-apis.git"
 git -C entservices-cpc-apis checkout "refs/tags/${CPC_APIS_TAG}"
 
 # entservices-helpers is expected next to the workspace
