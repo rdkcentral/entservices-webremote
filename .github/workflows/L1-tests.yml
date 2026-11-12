@@ -156,6 +156,7 @@ jobs:
           repository: rdk-e/entservices-cpc-apis
           path: entservices-cpc-apis
           ref: 4.3.1
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout entservices-apis
         uses: actions/checkout@v3
