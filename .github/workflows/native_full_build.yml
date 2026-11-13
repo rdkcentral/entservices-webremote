@@ -20,4 +20,4 @@ jobs:
           sh -x build_dependencies.sh
           sh -x cov_build.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.RDKCM_RDKE }}
+          GITHUB_TOKEN: ${{ secrets.RDKE_GITHUB_TOKEN }}
