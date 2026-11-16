@@ -20,12 +20,14 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <future>
 #include <string>
 #include <vector>
 
 #include "WebRemote.h"
 
 #include "ServiceMock.h"
+#include "WorkerPoolImplementation.h"
 
 using ::testing::_;
 using ::testing::Eq;
@@ -95,12 +97,30 @@ public:
     END_INTERFACE_MAP
 };
 
+// Marker job: with a single worker thread, it runs after every job queued before it.
+class SyncJob : public Core::IDispatch {
+public:
+    explicit SyncJob(std::promise<void>& done)
+        : _done(done)
+    {
+    }
+
+    void Dispatch() override
+    {
+        _done.set_value();
+    }
+
+private:
+    std::promise<void>& _done;
+};
+
 } // namespace
 
 class WebRemoteTest : public ::testing::Test {
 protected:
     NiceMock<ServiceMock> service;
     NiceMock<LinchpinMock> linchpin;
+    Core::ProxyType<WorkerPoolImplementation> workerPool;
     Core::ProxyType<TestableWebRemote> pluginProxy;
     TestableWebRemote& plugin;
     bool linchpinAvailable{ true };
@@ -114,6 +134,11 @@ protected:
 
     void SetUp() override
     {
+        // One worker thread, so jobs run in submission order (see DrainWorkerPool).
+        workerPool = Core::ProxyType<WorkerPoolImplementation>::Create(2, Core::Thread::DefaultStackSize(), 16);
+        Core::IWorkerPool::Assign(&(*workerPool));
+        workerPool->Run();
+
         ON_CALL(service, ConfigLine()).WillByDefault(Invoke([this]() { return config; }));
         ON_CALL(service, QueryInterfaceByCallsign(_, _))
             .WillByDefault(Invoke([this](const uint32_t, const string& name) -> void* {
@@ -127,6 +152,24 @@ protected:
         ON_CALL(linchpin, Subscribe(_, _)).WillByDefault(Return(Core::ERROR_NONE));
         ON_CALL(linchpin, Unsubscribe(_, _)).WillByDefault(Return(Core::ERROR_NONE));
         ON_CALL(linchpin, RegistrationCallbackOnMessageReceived(_)).WillByDefault(Return(Core::ERROR_NONE));
+    }
+
+    void TearDown() override
+    {
+        DrainWorkerPool();
+        Core::IWorkerPool::Assign(nullptr);
+        workerPool->Stop();
+        workerPool = Core::ProxyType<WorkerPoolImplementation>();
+    }
+
+    // Blocks until every job queued so far has run.
+    void DrainWorkerPool()
+    {
+        std::promise<void> done;
+        std::future<void> finished = done.get_future();
+        Core::IWorkerPool::Instance().Submit(
+            Core::ProxyType<Core::IDispatch>(Core::ProxyType<SyncJob>::Create(done)));
+        ASSERT_EQ(std::future_status::ready, finished.wait_for(std::chrono::seconds(5)));
     }
 
     // Initializes the plugin and leaves it ready to route messages on TOPIC.
@@ -169,6 +212,7 @@ TEST_F(WebRemoteTest, Initialize_SubscribesWhenLinchpinActivatesLater)
     linchpinAvailable = true;
     EXPECT_CALL(linchpin, Subscribe(Eq("WebRemote"), Eq(TOPIC))).WillOnce(Return(Core::ERROR_NONE));
     shellSink->Activated(LINCHPIN_CALLSIGN, nullptr);
+    DrainWorkerPool();
 
     plugin.Deinitialize(&service);
 }

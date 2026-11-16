@@ -116,8 +116,49 @@ namespace Plugin {
             WebRemote& _parent;
         };
 
+        enum Event {
+            EV_LINCHPIN_ACTIVATED,
+            EV_LINCHPIN_DEACTIVATED
+        };
+
+        // Worker-pool job: calls WebRemote::Dispatch() on a worker thread.
+        class DispatchJob : public Core::IDispatch {
+        protected:
+            DispatchJob(WebRemote* parent, Event event)
+                : _parent(parent)
+                , _event(event)
+            {
+                _parent->AddRef();
+            }
+
+        public:
+            DispatchJob() = delete;
+            DispatchJob(const DispatchJob&) = delete;
+            DispatchJob& operator=(const DispatchJob&) = delete;
+            ~DispatchJob() override
+            {
+                _parent->Release();
+            }
+
+            static Core::ProxyType<Core::IDispatch> Create(WebRemote* parent, Event event)
+            {
+                return Core::ProxyType<Core::IDispatch>(Core::ProxyType<DispatchJob>::Create(parent, event));
+            }
+
+            void Dispatch() override
+            {
+                _parent->Dispatch(_event);
+            }
+
+        private:
+            WebRemote* _parent;
+            const Event _event;
+        };
+
         void OnPluginActivated(const string& callsign);
         void OnPluginDeactivated(const string& callsign);
+        void dispatchEvent(Event event);
+        void Dispatch(Event event);
         void SubscribeToLinchpin();
         void UnsubscribeFromLinchpin();
 

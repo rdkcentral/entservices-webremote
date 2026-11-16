@@ -112,10 +112,15 @@ namespace Plugin {
         ASSERT(_service == service);
 
         _service->Unregister(&_notification);
+
+        _adminLock.Lock();
+        PluginHost::IShell* shell = _service;
+        _service = nullptr;
+        _adminLock.Unlock();
+
         UnsubscribeFromLinchpin();
 
-        _service->Release();
-        _service = nullptr;
+        shell->Release();
         _topic.clear();
 
         SYSLOG(Logging::Shutdown, (string(_T("WebRemote de-initialised"))));
@@ -129,20 +134,43 @@ namespace Plugin {
     void WebRemote::OnPluginActivated(const string& callsign)
     {
         if (callsign == LINCHPIN_CALLSIGN) {
-            SubscribeToLinchpin();
+            dispatchEvent(EV_LINCHPIN_ACTIVATED);
         }
     }
 
     void WebRemote::OnPluginDeactivated(const string& callsign)
     {
         if (callsign == LINCHPIN_CALLSIGN) {
+            dispatchEvent(EV_LINCHPIN_DEACTIVATED);
+        }
+    }
+
+    void WebRemote::dispatchEvent(Event event)
+    {
+        Core::IWorkerPool::Instance().Submit(DispatchJob::Create(this, event));
+    }
+
+    void WebRemote::Dispatch(Event event)
+    {
+        switch (event) {
+        case EV_LINCHPIN_ACTIVATED:
+            SubscribeToLinchpin();
+            break;
+        case EV_LINCHPIN_DEACTIVATED:
             UnsubscribeFromLinchpin();
+            break;
         }
     }
 
     void WebRemote::SubscribeToLinchpin()
     {
         _adminLock.Lock();
+
+        // A queued job can run after Deinitialize().
+        if (_service == nullptr) {
+            _adminLock.Unlock();
+            return;
+        }
 
         if (_linchpin == nullptr) {
             _linchpin = _service->QueryInterfaceByCallsign<Exchange::ILinchpinClientProxy>(LINCHPIN_CALLSIGN);
