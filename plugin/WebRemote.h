@@ -95,7 +95,7 @@ namespace Plugin {
             {
                 (void)headers;
                 (void)responseTopic;
-                _parent.HandleMessage(topic, payloadType, payload);
+                _parent.OnMessageReceived(topic, payloadType, payload);
             }
 
             void Activated(const string& callsign, PluginHost::IShell*) override
@@ -118,15 +118,23 @@ namespace Plugin {
 
         enum Event {
             EV_LINCHPIN_ACTIVATED,
-            EV_LINCHPIN_DEACTIVATED
+            EV_LINCHPIN_DEACTIVATED,
+            EV_MESSAGE_RECEIVED
+        };
+
+        struct ParamsType {
+            string topic;
+            string payloadType;
+            string payload;
         };
 
         // Worker-pool job: calls WebRemote::Dispatch() on a worker thread.
         class DispatchJob : public Core::IDispatch {
         protected:
-            DispatchJob(WebRemote* parent, Event event)
+            DispatchJob(WebRemote* parent, Event event, const ParamsType& params)
                 : _parent(parent)
                 , _event(event)
+                , _params(params)
             {
                 _parent->AddRef();
             }
@@ -140,25 +148,27 @@ namespace Plugin {
                 _parent->Release();
             }
 
-            static Core::ProxyType<Core::IDispatch> Create(WebRemote* parent, Event event)
+            static Core::ProxyType<Core::IDispatch> Create(WebRemote* parent, Event event, const ParamsType& params)
             {
-                return Core::ProxyType<Core::IDispatch>(Core::ProxyType<DispatchJob>::Create(parent, event));
+                return Core::ProxyType<Core::IDispatch>(Core::ProxyType<DispatchJob>::Create(parent, event, params));
             }
 
             void Dispatch() override
             {
-                _parent->Dispatch(_event);
+                _parent->Dispatch(_event, _params);
             }
 
         private:
             WebRemote* _parent;
             const Event _event;
+            const ParamsType _params;
         };
 
         void OnPluginActivated(const string& callsign);
         void OnPluginDeactivated(const string& callsign);
-        void dispatchEvent(Event event);
-        void Dispatch(Event event);
+        void OnMessageReceived(const string& topic, const string& payloadType, const string& payload);
+        void dispatchEvent(Event event, const ParamsType& params = ParamsType());
+        void Dispatch(Event event, const ParamsType& params);
         PluginHost::IShell* AcquireService();
         void SubscribeToLinchpin();
         void UnsubscribeFromLinchpin();

@@ -30,6 +30,7 @@
 #include "WorkerPoolImplementation.h"
 
 using ::testing::_;
+using ::testing::DoAll;
 using ::testing::Eq;
 using ::testing::Invoke;
 using ::testing::NiceMock;
@@ -214,6 +215,22 @@ TEST_F(WebRemoteTest, Initialize_SubscribesWhenLinchpinActivatesLater)
     shellSink->Activated(LINCHPIN_CALLSIGN, nullptr);
     DrainWorkerPool();
 
+    plugin.Deinitialize(&service);
+}
+
+TEST_F(WebRemoteTest, NotificationMessageIsHandledOnWorkerPool)
+{
+    Exchange::ILinchpinClientProxy::INotification* sink = nullptr;
+    EXPECT_CALL(linchpin, Register(_)).WillOnce(DoAll(SaveArg<0>(&sink), Return(Core::ERROR_NONE)));
+
+    InitializePlugin();
+    ASSERT_NE(nullptr, sink);
+
+    sink->OnMessageReceived(TOPIC, "5", Payload("generateKey", "text", R"({"text":"Launch Netflix"})"), "", "");
+    DrainWorkerPool();
+
+    ASSERT_EQ(1u, plugin.texts.size());
+    EXPECT_EQ("Launch Netflix", plugin.texts[0]);
     plugin.Deinitialize(&service);
 }
 

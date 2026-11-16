@@ -151,12 +151,21 @@ namespace Plugin {
         }
     }
 
-    void WebRemote::dispatchEvent(Event event)
+    void WebRemote::OnMessageReceived(const string& topic, const string& payloadType, const string& payload)
     {
-        Core::IWorkerPool::Instance().Submit(DispatchJob::Create(this, event));
+        ParamsType params;
+        params.topic = topic;
+        params.payloadType = payloadType;
+        params.payload = payload;
+        dispatchEvent(EV_MESSAGE_RECEIVED, params);
     }
 
-    void WebRemote::Dispatch(Event event)
+    void WebRemote::dispatchEvent(Event event, const ParamsType& params)
+    {
+        Core::IWorkerPool::Instance().Submit(DispatchJob::Create(this, event, params));
+    }
+
+    void WebRemote::Dispatch(Event event, const ParamsType& params)
     {
         switch (event) {
         case EV_LINCHPIN_ACTIVATED:
@@ -164,6 +173,9 @@ namespace Plugin {
             break;
         case EV_LINCHPIN_DEACTIVATED:
             UnsubscribeFromLinchpin();
+            break;
+        case EV_MESSAGE_RECEIVED:
+            HandleMessage(params.topic, params.payloadType, params.payload);
             break;
         }
     }
