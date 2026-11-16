@@ -184,6 +184,7 @@ TEST_F(WebRemoteTest, Initialize_FailsWithoutDeviceId)
 {
     config = "{}";
     EXPECT_NE(string(), plugin.Initialize(&service));
+    plugin.Deinitialize(&service);
 }
 
 TEST_F(WebRemoteTest, Initialize_SubscribesToDeviceTopic)

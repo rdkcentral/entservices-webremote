@@ -65,8 +65,6 @@ namespace {
 
 namespace Plugin {
 
-    SERVICE_REGISTRATION(WebRemote, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
-
     WebRemote::WebRemote()
         : _service(nullptr)
         , _topic()
@@ -109,23 +107,24 @@ namespace Plugin {
 
     void WebRemote::Deinitialize(PluginHost::IShell* service)
     {
-        ASSERT(_service == service);
-
-        service->Unregister(&_notification);
-
         _adminLock.Lock();
         PluginHost::IShell* shell = _service;
         _service = nullptr;
         _adminLock.Unlock();
 
-        // _topic stays valid until the unsubscribe below has used it.
-        UnsubscribeFromLinchpin(shell);
+        // Initialize() failed before taking the service, so there is nothing to undo.
+        if (shell != nullptr) {
+            service->Unregister(&_notification);
+
+            // _topic stays valid until the unsubscribe below has used it.
+            UnsubscribeFromLinchpin(shell);
+
+            shell->Release();
+        }
 
         _adminLock.Lock();
         _topic.clear();
         _adminLock.Unlock();
-
-        shell->Release();
 
         SYSLOG(Logging::Shutdown, (string(_T("WebRemote de-initialised"))));
     }
