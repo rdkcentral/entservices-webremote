@@ -159,6 +159,7 @@ namespace Plugin {
         void OnPluginDeactivated(const string& callsign);
         void dispatchEvent(Event event);
         void Dispatch(Event event);
+        PluginHost::IShell* AcquireService();
         void SubscribeToLinchpin();
         void UnsubscribeFromLinchpin();
 

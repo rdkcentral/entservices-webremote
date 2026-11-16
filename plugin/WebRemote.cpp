@@ -95,11 +95,13 @@ namespace Plugin {
             return _T("WebRemote: 'deviceid' is not configured");
         }
 
+        _adminLock.Lock();
         _topic = string(TOPIC_PREFIX) + config.DeviceId.Value();
-
         _service = service;
         _service->AddRef();
-        _service->Register(&_notification);
+        _adminLock.Unlock();
+
+        service->Register(&_notification);
 
         // Linchpin may already be running; otherwise OnPluginActivated() subscribes later.
         SubscribeToLinchpin();
@@ -111,17 +113,21 @@ namespace Plugin {
     {
         ASSERT(_service == service);
 
-        _service->Unregister(&_notification);
+        service->Unregister(&_notification);
 
         _adminLock.Lock();
         PluginHost::IShell* shell = _service;
         _service = nullptr;
         _adminLock.Unlock();
 
+        // _topic stays valid until the unsubscribe below has used it.
         UnsubscribeFromLinchpin();
 
-        shell->Release();
+        _adminLock.Lock();
         _topic.clear();
+        _adminLock.Unlock();
+
+        shell->Release();
 
         SYSLOG(Logging::Shutdown, (string(_T("WebRemote de-initialised"))));
     }
@@ -219,11 +225,27 @@ namespace Plugin {
         _adminLock.Unlock();
     }
 
+    PluginHost::IShell* WebRemote::AcquireService()
+    {
+        _adminLock.Lock();
+        PluginHost::IShell* shell = _service;
+        if (shell != nullptr) {
+            shell->AddRef();
+        }
+        _adminLock.Unlock();
+
+        return shell;
+    }
+
     void WebRemote::HandleMessage(const string& topic, const string& payloadType, const string& payload)
     {
-        LOGINFO("Message on topic %s (subscribed %s), payloadType %s", topic.c_str(), _topic.c_str(), payloadType.c_str());
+        _adminLock.Lock();
+        const string subscribed = _topic;
+        _adminLock.Unlock();
 
-        if (topic != _topic) {
+        LOGINFO("Message on topic %s (subscribed %s), payloadType %s", topic.c_str(), subscribed.c_str(), payloadType.c_str());
+
+        if (topic != subscribed) {
             return;
         }
 
@@ -271,7 +293,8 @@ namespace Plugin {
     bool WebRemote::SendKey(int code, uint32_t modifier, uint32_t delay, uint32_t duration)
     {
         bool success = false;
-        Exchange::ITools* tools = _service->QueryInterfaceByCallsign<Exchange::ITools>(KEY_TARGET_CALLSIGN);
+        PluginHost::IShell* shell = AcquireService();
+        Exchange::ITools* tools = (shell != nullptr) ? shell->QueryInterfaceByCallsign<Exchange::ITools>(KEY_TARGET_CALLSIGN) : nullptr;
 
         if (tools != nullptr) {
             Exchange::ToolsKey key;
@@ -283,6 +306,10 @@ namespace Plugin {
             bool generated = false;
             success = (tools->GenerateKeys(std::vector<Exchange::ToolsKey>(1, key), generated) == Core::ERROR_NONE) && generated;
             tools->Release();
+        }
+
+        if (shell != nullptr) {
+            shell->Release();
         }
 
         if (success == false) {
@@ -297,7 +324,8 @@ namespace Plugin {
     {
         bool success = false;
         Core::OptionalType<string> sessionId;
-        Exchange::IVoiceControl* voice = _service->QueryInterfaceByCallsign<Exchange::IVoiceControl>(VOICECONTROL_CALLSIGN);
+        PluginHost::IShell* shell = AcquireService();
+        Exchange::IVoiceControl* voice = (shell != nullptr) ? shell->QueryInterfaceByCallsign<Exchange::IVoiceControl>(VOICECONTROL_CALLSIGN) : nullptr;
 
         if (voice != nullptr) {
             bool accepted = false;
@@ -308,6 +336,10 @@ namespace Plugin {
 
             success = ((result == Core::ERROR_NONE) && accepted);
             voice->Release();
+        }
+
+        if (shell != nullptr) {
+            shell->Release();
         }
 
         if (success == false) {
