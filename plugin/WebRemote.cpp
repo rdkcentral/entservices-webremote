@@ -69,7 +69,6 @@ namespace Plugin {
 
     WebRemote::WebRemote()
         : _service(nullptr)
-        , _linchpin(nullptr)
         , _topic()
         , _adminLock()
         , _notification(this)
@@ -86,7 +85,6 @@ namespace Plugin {
     {
         ASSERT(service != nullptr);
         ASSERT(_service == nullptr);
-        ASSERT(_linchpin == nullptr);
 
         Config config;
         config.FromString(service->ConfigLine());
@@ -121,7 +119,7 @@ namespace Plugin {
         _adminLock.Unlock();
 
         // _topic stays valid until the unsubscribe below has used it.
-        UnsubscribeFromLinchpin();
+        UnsubscribeFromLinchpin(shell);
 
         _adminLock.Lock();
         _topic.clear();
@@ -141,13 +139,6 @@ namespace Plugin {
     {
         if (callsign == LINCHPIN_CALLSIGN) {
             dispatchEvent(EV_LINCHPIN_ACTIVATED);
-        }
-    }
-
-    void WebRemote::OnPluginDeactivated(const string& callsign)
-    {
-        if (callsign == LINCHPIN_CALLSIGN) {
-            dispatchEvent(EV_LINCHPIN_DEACTIVATED);
         }
     }
 
@@ -171,9 +162,6 @@ namespace Plugin {
         case EV_LINCHPIN_ACTIVATED:
             SubscribeToLinchpin();
             break;
-        case EV_LINCHPIN_DEACTIVATED:
-            UnsubscribeFromLinchpin();
-            break;
         case EV_MESSAGE_RECEIVED:
             HandleMessage(params.topic, params.payloadType, params.payload);
             break;
@@ -190,28 +178,33 @@ namespace Plugin {
             return;
         }
 
-        if (_linchpin == nullptr) {
-            _linchpin = _service->QueryInterfaceByCallsign<Exchange::ILinchpinClientProxy>(LINCHPIN_CALLSIGN);
-        }
+        // Acquired per call so the proxy never outlives a Linchpin deactivation.
+        Exchange::ILinchpinClientProxy* linchpin = _service->QueryInterfaceByCallsign<Exchange::ILinchpinClientProxy>(LINCHPIN_CALLSIGN);
 
-        if (_linchpin != nullptr) {
-            if (_linchpin->Register(&_notification) == Core::ERROR_NONE) {
-                LOGINFO("Registered for Linchpin notifications");
-            }
-
-            if (_linchpin->Subscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
-                LOGINFO("Subscribe to topic %s succeeded", _topic.c_str());
-
-                // Delivers a message already pending on the topic, if any.
-                if (_linchpin->RegistrationCallbackOnMessageReceived(LINCHPIN_CLIENT_ID) == Core::ERROR_NONE) {
-                    LOGINFO("RegistrationCallbackOnMessageReceived succeeded for %s", LINCHPIN_CLIENT_ID);
-                }
+        if (linchpin != nullptr) {
+            if (linchpin->Register(&_notification) != Core::ERROR_NONE) {
+                LOGERR("Failed to register for Linchpin notifications");
             } else {
-                LOGERR("Failed to subscribe to topic %s", _topic.c_str());
-                _linchpin->Unregister(&_notification);
-                _linchpin->Release();
-                _linchpin = nullptr;
+                LOGINFO("Registered for Linchpin notifications");
+
+                if (linchpin->Subscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
+                    LOGINFO("Subscribe to topic %s succeeded", _topic.c_str());
+
+                    // Delivers a message already pending on the topic, if any.
+                    if (linchpin->RegistrationCallbackOnMessageReceived(LINCHPIN_CLIENT_ID) == Core::ERROR_NONE) {
+                        LOGINFO("RegistrationCallbackOnMessageReceived succeeded for %s", LINCHPIN_CLIENT_ID);
+                    } else {
+                        LOGERR("RegistrationCallbackOnMessageReceived failed for %s", LINCHPIN_CLIENT_ID);
+                    }
+                } else {
+                    LOGERR("Failed to subscribe to topic %s", _topic.c_str());
+                    if (linchpin->Unregister(&_notification) != Core::ERROR_NONE) {
+                        LOGERR("Failed to unregister from Linchpin notifications");
+                    }
+                }
             }
+
+            linchpin->Release();
         } else {
             LOGWARN("%s is not available, waiting for activation", LINCHPIN_CALLSIGN);
         }
@@ -219,19 +212,24 @@ namespace Plugin {
         _adminLock.Unlock();
     }
 
-    void WebRemote::UnsubscribeFromLinchpin()
+    void WebRemote::UnsubscribeFromLinchpin(PluginHost::IShell* service)
     {
         _adminLock.Lock();
 
-        if (_linchpin != nullptr) {
-            if (_linchpin->Unsubscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
+        Exchange::ILinchpinClientProxy* linchpin = service->QueryInterfaceByCallsign<Exchange::ILinchpinClientProxy>(LINCHPIN_CALLSIGN);
+
+        if (linchpin != nullptr) {
+            if (linchpin->Unsubscribe(LINCHPIN_CLIENT_ID, _topic) == Core::ERROR_NONE) {
                 LOGINFO("Unsubscribe from topic %s succeeded", _topic.c_str());
+            } else {
+                LOGERR("Failed to unsubscribe from topic %s", _topic.c_str());
             }
-            if (_linchpin->Unregister(&_notification) == Core::ERROR_NONE) {
+            if (linchpin->Unregister(&_notification) == Core::ERROR_NONE) {
                 LOGINFO("Unregistered from Linchpin notifications");
+            } else {
+                LOGERR("Failed to unregister from Linchpin notifications");
             }
-            _linchpin->Release();
-            _linchpin = nullptr;
+            linchpin->Release();
         }
 
         _adminLock.Unlock();
