@@ -105,8 +105,9 @@ namespace Plugin {
                 _parent.OnPluginActivated(callsign);
             }
 
-            void Deactivated(const string&, PluginHost::IShell*) override
+            void Deactivated(const string& callsign, PluginHost::IShell*) override
             {
+                _parent.OnPluginDeactivated(callsign);
             }
 
             void Unavailable(const string&, PluginHost::IShell*) override
@@ -119,6 +120,7 @@ namespace Plugin {
 
         enum Event {
             EV_LINCHPIN_ACTIVATED,
+            EV_LINCHPIN_DEACTIVATED,
             EV_MESSAGE_RECEIVED
         };
 
@@ -165,14 +167,16 @@ namespace Plugin {
         };
 
         void OnPluginActivated(const string& callsign);
+        void OnPluginDeactivated(const string& callsign);
         void OnMessageReceived(const string& topic, const string& payloadType, const string& payload);
         void dispatchEvent(Event event, const ParamsType& params = ParamsType());
         void Dispatch(Event event, const ParamsType& params);
         PluginHost::IShell* AcquireService();
         void SubscribeToLinchpin();
-        void UnsubscribeFromLinchpin(PluginHost::IShell* service);
+        void UnsubscribeFromLinchpin();
 
         PluginHost::IShell* _service;
+        Exchange::ILinchpinClientProxy* _linchpin;
         string _topic;
         Core::CriticalSection _adminLock;
         Core::Sink<Notification> _notification;
