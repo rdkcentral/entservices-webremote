@@ -100,7 +100,7 @@ namespace Plugin {
         service->Register(&_notification);
 
         // Linchpin may already be running; otherwise OnPluginActivated() subscribes later.
-        SubscribeToLinchpin();
+        dispatchEvent(EV_LINCHPIN_ACTIVATED);
 
         return string();
     }

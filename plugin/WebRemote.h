@@ -29,8 +29,10 @@ namespace Plugin {
     // Interface-less plugin: relays Linchpin topic messages to key generation or voice control.
     class WebRemote : public PluginHost::IPlugin {
     public:
-        WebRemote(const WebRemote&) = delete;
+	WebRemote(const WebRemote&) = delete;
         WebRemote& operator=(const WebRemote&) = delete;
+        WebRemote(WebRemote&&) = delete;
+        WebRemote& operator=(WebRemote&&) = delete;
 
         WebRemote();
         ~WebRemote() override;
