@@ -269,8 +269,9 @@ namespace Plugin {
             return;
         }
 
-        const string dataType = message["dataType"].String();
-        const Core::JSON::VariantContainer data = message["data"].Object();
+        const Core::JSON::VariantContainer envelope = message["data"].Object();
+        const string dataType = envelope["type"].String();
+        const Core::JSON::VariantContainer data = envelope["value"].Object();
 
         if (dataType == DATA_TYPE_KEY_PRESS) {
             const string code = data["code"].String();

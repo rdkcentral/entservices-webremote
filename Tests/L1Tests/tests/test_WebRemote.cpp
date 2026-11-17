@@ -46,8 +46,8 @@ const char TOPIC[] = "X12345";
 // Builds the inner Linchpin payload (the "payload" member of the published message).
 string Payload(const string& method, const string& dataType, const string& data)
 {
-    return "{\"method\":\"" + method + "\",\"requestUid\":\"webRemote-X12345\",\"dataType\":\"" + dataType
-        + "\",\"data\":" + data + ",\"notificationUID\":\"1234\"}";
+    return "{\"method\":\"" + method + "\",\"requestUid\":\"webRemote-X12345\",\"data\":{\"type\":\"" + dataType
+        + "\",\"value\":" + data + "},\"notificationUID\":\"1234\"}";
 }
 
 // Records routed messages instead of calling the other plugins.
