@@ -2,6 +2,3 @@ precondition = ["Platform"]
 callsign = "org.rdk.WebRemote"
 autostart = "@PLUGIN_WEBREMOTE_AUTOSTART@"
 startuporder = "@PLUGIN_WEBREMOTE_STARTUPORDER@"
-
-configuration = JSON()
-configuration.add("deviceid", "@PLUGIN_WEBREMOTE_DEVICEID@")

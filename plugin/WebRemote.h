@@ -20,6 +20,7 @@
 #pragma once
 
 #include "Module.h"
+#include <interfaces/IAuthService.h>
 #include <interfaces/ILinchpinClientProxy.h>
 #include "UtilsLogging.h"
 
@@ -53,21 +54,6 @@ namespace Plugin {
         virtual bool SendText(const string& text);
 
     private:
-        class Config : public Core::JSON::Container {
-        public:
-            Config(const Config&) = delete;
-            Config& operator=(const Config&) = delete;
-            Config()
-                : Core::JSON::Container()
-                , DeviceId()
-            {
-                Add(_T("deviceid"), &DeviceId);
-            }
-            ~Config() override = default;
-
-            Core::JSON::String DeviceId;
-        };
-
         class Notification : public Exchange::ILinchpinClientProxy::INotification,
                              public PluginHost::IPlugin::INotification {
         public:
@@ -172,6 +158,7 @@ namespace Plugin {
         void dispatchEvent(Event event, const ParamsType& params = ParamsType());
         void Dispatch(Event event, const ParamsType& params);
         PluginHost::IShell* AcquireService();
+        bool ResolveTopic(string& topic);
         void SubscribeToLinchpin();
         void UnsubscribeFromLinchpin();
 

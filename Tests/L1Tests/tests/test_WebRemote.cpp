@@ -28,6 +28,7 @@
 
 #include "ServiceMock.h"
 #include "WorkerPoolImplementation.h"
+#include "mockauthservices.h"
 
 using ::testing::_;
 using ::testing::DoAll;
@@ -41,7 +42,8 @@ using namespace WPEFramework;
 namespace {
 
 const char LINCHPIN_CALLSIGN[] = "org.rdk.LinchpinClientProxy";
-const char TOPIC[] = "X12345";
+const char AUTHSERVICE_CALLSIGN[] = "org.rdk.AuthService";
+const char TOPIC[] = "p:comcast:d:X123:t:WebRemote";
 
 // Builds the inner Linchpin payload (the "payload" member of the published message).
 string Payload(const string& method, const string& dataType, const string& data)
@@ -121,11 +123,13 @@ class WebRemoteTest : public ::testing::Test {
 protected:
     NiceMock<ServiceMock> service;
     NiceMock<LinchpinMock> linchpin;
+    NiceMock<MockAuthService> authService;
     Core::ProxyType<WorkerPoolImplementation> workerPool;
     Core::ProxyType<TestableWebRemote> pluginProxy;
     TestableWebRemote& plugin;
     bool linchpinAvailable{ true };
-    string config{ "{\"deviceid\":\"12345\"}" };
+    bool authServiceAvailable{ true };
+    bool idsAvailable{ true };
 
     WebRemoteTest()
         : pluginProxy(Core::ProxyType<TestableWebRemote>::Create())
@@ -140,13 +144,27 @@ protected:
         Core::IWorkerPool::Assign(&(*workerPool));
         workerPool->Run();
 
-        ON_CALL(service, ConfigLine()).WillByDefault(Invoke([this]() { return config; }));
         ON_CALL(service, QueryInterfaceByCallsign(_, _))
             .WillByDefault(Invoke([this](const uint32_t, const string& name) -> void* {
                 if ((linchpinAvailable == true) && (name == LINCHPIN_CALLSIGN)) {
                     return static_cast<void*>(static_cast<Exchange::ILinchpinClientProxy*>(&linchpin));
                 }
+                if ((authServiceAvailable == true) && (name == AUTHSERVICE_CALLSIGN)) {
+                    return static_cast<void*>(static_cast<Exchange::IAuthService*>(&authService));
+                }
                 return nullptr;
+            }));
+        ON_CALL(authService, GetDeviceId(_))
+            .WillByDefault(Invoke([this](Exchange::IAuthService::GetDeviceIdResult& result) -> uint32_t {
+                result.partnerId = "comcast";
+                result.success = idsAvailable;
+                return Core::ERROR_NONE;
+            }));
+        ON_CALL(authService, GetXDeviceId(_))
+            .WillByDefault(Invoke([this](Exchange::IAuthService::GetXDeviceIdResult& result) -> uint32_t {
+                result.xDeviceId = "X123";
+                result.success = idsAvailable;
+                return Core::ERROR_NONE;
             }));
         ON_CALL(linchpin, Register(_)).WillByDefault(Return(Core::ERROR_NONE));
         ON_CALL(linchpin, Unregister(_)).WillByDefault(Return(Core::ERROR_NONE));
@@ -177,13 +195,45 @@ protected:
     void InitializePlugin()
     {
         EXPECT_EQ(string(), plugin.Initialize(&service));
+        DrainWorkerPool();
     }
 };
 
-TEST_F(WebRemoteTest, Initialize_FailsWithoutDeviceId)
+TEST_F(WebRemoteTest, Initialize_WaitsWhileIdsAreNotAvailable)
 {
-    config = "{}";
-    EXPECT_NE(string(), plugin.Initialize(&service));
+    PluginHost::IPlugin::INotification* shellSink = nullptr;
+    ON_CALL(service, Register(::testing::An<PluginHost::IPlugin::INotification*>()))
+        .WillByDefault(SaveArg<0>(&shellSink));
+
+    idsAvailable = false;
+    EXPECT_CALL(linchpin, Subscribe(_, _)).Times(0);
+    InitializePlugin();
+    ASSERT_NE(nullptr, shellSink);
+
+    idsAvailable = true;
+    EXPECT_CALL(linchpin, Subscribe(Eq("WebRemote"), Eq(TOPIC))).WillOnce(Return(Core::ERROR_NONE));
+    shellSink->Activated(AUTHSERVICE_CALLSIGN, nullptr);
+    DrainWorkerPool();
+
+    plugin.Deinitialize(&service);
+}
+
+TEST_F(WebRemoteTest, Initialize_SubscribesWhenAuthServiceActivatesLater)
+{
+    PluginHost::IPlugin::INotification* shellSink = nullptr;
+    ON_CALL(service, Register(::testing::An<PluginHost::IPlugin::INotification*>()))
+        .WillByDefault(SaveArg<0>(&shellSink));
+
+    authServiceAvailable = false;
+    EXPECT_CALL(linchpin, Subscribe(_, _)).Times(0);
+    InitializePlugin();
+    ASSERT_NE(nullptr, shellSink);
+
+    authServiceAvailable = true;
+    EXPECT_CALL(linchpin, Subscribe(Eq("WebRemote"), Eq(TOPIC))).WillOnce(Return(Core::ERROR_NONE));
+    shellSink->Activated(AUTHSERVICE_CALLSIGN, nullptr);
+    DrainWorkerPool();
+
     plugin.Deinitialize(&service);
 }
 
@@ -289,7 +339,7 @@ TEST_F(WebRemoteTest, Text_RoutedAsText)
 TEST_F(WebRemoteTest, OtherTopicIsIgnored)
 {
     InitializePlugin();
-    plugin.HandleMessage("Xother", "5", Payload("generateKey", "text", R"({"text":"hello"})"));
+    plugin.HandleMessage("p:comcast:d:other:t:WebRemote", "5", Payload("generateKey", "text", R"({"text":"hello"})"));
 
     EXPECT_TRUE(plugin.keys.empty());
     EXPECT_TRUE(plugin.texts.empty());

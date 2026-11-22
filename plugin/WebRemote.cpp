@@ -45,11 +45,11 @@ namespace {
         {});
 
     const char LINCHPIN_CALLSIGN[] = "org.rdk.LinchpinClientProxy";
+    const char AUTHSERVICE_CALLSIGN[] = "org.rdk.AuthService";
     const char VOICECONTROL_CALLSIGN[] = "org.rdk.VoiceControl";
     const char KEY_TARGET_CALLSIGN[] = "org.rdk.Tools";
 
     const char LINCHPIN_CLIENT_ID[] = "WebRemote";
-    const char TOPIC_PREFIX[] = "X";
     const char METHOD_GENERATE_KEY[] = "generateKey";
     const char DATA_TYPE_KEY_PRESS[] = "keypress";
     const char DATA_TYPE_TEXT[] = "text";
@@ -86,22 +86,14 @@ namespace Plugin {
         ASSERT(_service == nullptr);
         ASSERT(_linchpin == nullptr);
 
-        Config config;
-        config.FromString(service->ConfigLine());
-
-        if (config.DeviceId.Value().empty() == true) {
-            return _T("WebRemote: 'deviceid' is not configured");
-        }
-
         _adminLock.Lock();
-        _topic = string(TOPIC_PREFIX) + config.DeviceId.Value();
         _service = service;
         _service->AddRef();
         _adminLock.Unlock();
 
         service->Register(&_notification);
 
-        // Linchpin may already be running; otherwise OnPluginActivated() subscribes later.
+        // Linchpin and AuthService may already be running; otherwise OnPluginActivated() subscribes later.
         dispatchEvent(EV_LINCHPIN_ACTIVATED);
 
         return string();
@@ -138,7 +130,7 @@ namespace Plugin {
 
     void WebRemote::OnPluginActivated(const string& callsign)
     {
-        if (callsign == LINCHPIN_CALLSIGN) {
+        if ((callsign == LINCHPIN_CALLSIGN) || (callsign == AUTHSERVICE_CALLSIGN)) {
             dispatchEvent(EV_LINCHPIN_ACTIVATED);
         }
     }
@@ -189,6 +181,13 @@ namespace Plugin {
             _adminLock.Unlock();
             return;
         }
+
+        string topic;
+        if (ResolveTopic(topic) == false) {
+            _adminLock.Unlock();
+            return;
+        }
+        _topic = topic;
 
         if (_linchpin == nullptr) {
             _linchpin = _service->QueryInterfaceByCallsign<Exchange::ILinchpinClientProxy>(LINCHPIN_CALLSIGN);
@@ -247,6 +246,34 @@ namespace Plugin {
         }
 
         _adminLock.Unlock();
+    }
+
+    // Caller holds _adminLock and _service is valid. AuthService is acquired for this call only.
+    bool WebRemote::ResolveTopic(string& topic)
+    {
+        bool resolved = false;
+        Exchange::IAuthService* authService = _service->QueryInterfaceByCallsign<Exchange::IAuthService>(AUTHSERVICE_CALLSIGN);
+
+        if (authService == nullptr) {
+            LOGWARN("%s is not available, waiting for activation", AUTHSERVICE_CALLSIGN);
+        } else {
+            Exchange::IAuthService::GetDeviceIdResult deviceId;
+            Exchange::IAuthService::GetXDeviceIdResult xDeviceId;
+
+            if ((authService->GetDeviceId(deviceId) != Core::ERROR_NONE) || (deviceId.success == false) || deviceId.partnerId.empty()) {
+                LOGWARN("partnerId not yet available from AuthService");
+            } else if ((authService->GetXDeviceId(xDeviceId) != Core::ERROR_NONE) || (xDeviceId.success == false) || xDeviceId.xDeviceId.empty()) {
+                LOGWARN("xDeviceId not yet available from AuthService");
+            } else {
+                topic = "p:" + deviceId.partnerId + ":d:" + xDeviceId.xDeviceId + ":t:WebRemote";
+                LOGINFO("Resolved topic %s", topic.c_str());
+                resolved = true;
+            }
+
+            authService->Release();
+        }
+
+        return resolved;
     }
 
     PluginHost::IShell* WebRemote::AcquireService()

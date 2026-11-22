@@ -20,7 +20,6 @@ set(MODULE_NAME ${NAMESPACE}${PLUGIN_NAME})
 
 set(PLUGIN_WEBREMOTE_AUTOSTART "false" CACHE STRING "Automatically start WebRemote plugin")
 set(PLUGIN_WEBREMOTE_STARTUPORDER "" CACHE STRING "Startup order for WebRemote plugin (must be after LinchpinClientProxy)")
-set(PLUGIN_WEBREMOTE_DEVICEID "" CACHE STRING "Device id used to build the X<device_id> Linchpin topic")
 
 find_package(${NAMESPACE}Plugins REQUIRED)
 find_package(${NAMESPACE}Definitions REQUIRED)
